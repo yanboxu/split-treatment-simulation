@@ -220,6 +220,19 @@ def fit_LR(X_data, Y_data, A_data, nObs):
     return Yhat_0, Yhat_1
 
 
+def placebo_confounder(X_data, A_data, Y_data):
+
+    treatment= A_data 
+    outcome= Y_data
+    data_size= X_data.shape[0]
+    random_col= np.random.rand(data_size)
+    random_col[random_col<0.5]=0
+    random_col[random_col>=0.5]= 1
+    print( np.unique(random_col, return_counts=True) )
+    A_data_placebo= random_col.astype(int)
+    return A_data_placebo
+
+
 def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
 
     treatment= A_data 
@@ -265,7 +278,7 @@ def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
     return corr_treat[0], corr_out[0], X_data_unobs_conf
 
 
-def refutation_analysis(method):
+def refutation_analysis(method, case):
     '''
         method: lr; svm
     '''
