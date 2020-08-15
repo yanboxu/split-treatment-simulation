@@ -263,3 +263,83 @@ def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
     X_data_unobs_conf= np.concatenate((X_data, unobs_confounder), axis=1)
     
     return corr_treat[0], corr_out[0], X_data_unobs_conf
+
+
+def refutation_analysis(method):
+    '''
+        method: lr; svm
+    '''
+    # Treatment: A_data; Features: X_data; Labels: Y_data [ Each of shape 10k*1 or 10k*50 ]
+    # A and A_data are the same
+
+    xDim = 50
+    nSim = 10000
+
+    #Data Generation
+    A_matched_Z = []
+    RMSEs = []
+
+    # A percentage Z match 52% params
+    # p_AgivenZ= 0.6
+    # p_AgivenNotZ=0.5
+
+    # A percentage Z match 77% params
+    p_AgivenZ= 0.8
+    p_AgivenNotZ=0.2
+
+    X_data, Y_data, A_data, nObs, Group_data, Y_0_data, Y_1_data, Z, A = sim_Data(xDim, nSim, p_AgivenZ, p_AgivenNotZ)
+    print(np.sum(Y_0_data), np.sum(Y_1_data))
+
+    #Results on Normal Data
+    if method == 'IPTW_LR':
+        Yhat_0, Yhat_1 = fit_IPTW_LR(X_data, Y_data, A_data, nObs)
+    elif method == 'IPTW_SVM':
+        Yhat_0, Yhat_1 = fit_IPTW_SVM(X_data, Y_data, A_data, nObs)
+        
+    a_matched_z, rmse = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+    print('% of A matched Z', a_matched_z)
+
+    A_matched_Z.append(a_matched_z)
+    RMSEs.append(rmse)
+
+    #UnObs Confounder
+    A_matched_Z_unobs = []
+    RMSEs_unobs = []
+
+    corr_t=[]
+    corr_y=[]
+    alpha_range= [10**3, 10**4, 10**5]
+
+    for alpha in alpha_range:
+
+        #Generate Obs Refutation Data
+        eps= 5000*alpha
+        if alpha ==10**3:
+            eps=5*eps
+
+        corr_treat, corr_out, X_data_unobs= bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps)
+        corr_t.append(corr_treat)
+        corr_y.append(corr_out)
+
+        #Results on Confounded Data
+        Yhat_0, Yhat_1 = fit_IPTW_LR(X_data_unobs,Y_data,  A_data, nObs)
+        a_matched_z, rmse = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+
+        A_matched_Z_unobs.append(a_matched_z)
+        RMSEs_unobs.append(rmse)
+
+        print('Final')
+        print('Correlation Treatment: ', corr_treat)
+        print('Correlation Outcome: ', corr_out)
+
+    alpha_range=np.array(alpha_range)
+    alpha_range=10000*(1/alpha_range)
+
+    A_matched_Z_unobs = np.array(A_matched_Z_unobs)
+    RMSEs_unobs = np.array(RMSEs_unobs)
+
+    sort_indice = np.argsort(A_matched_Z_unobs)
+    sort_indice = sort_indice[::-1]
+    print(sort_indice, RMSEs_unobs)
+    
+    return alpha_range, sort_indice, a_matched_z, A_matched_Z_unobs, RMSEs_unobs, RMSEs, corr_t, corr_y
