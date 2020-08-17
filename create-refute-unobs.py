@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np 
 from scipy.stats.stats import pearsonr 
 
-file_name_list=[  "Obs_O365UserFeature_pruned"]
+file_name_list=[  "Obs_Feature25_pruned", "Obs_Feature106_pruned"]
 
 for fname in file_name_list:
 	# Loading data from no columns csv files; hence header=None set
@@ -18,7 +18,7 @@ for fname in file_name_list:
 	total_size= data_frame.shape[0]
 	unobs_confounder_stats=np.zeros((2,2))
 
-	if fname == 'Obs_EndUserFeature_pruned':
+	if fname == 'Obs_Feature106_pruned':
 		alpha= 1000.0
 		eps= 1700*alpha
 	else:		

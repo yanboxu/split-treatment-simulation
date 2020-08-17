@@ -1,7 +1,7 @@
 import pandas as pd 
 import numpy as np 
 
-file_name_list=[ "Obs_EndUserFeature_pruned",  "Obs_O365UserFeature_pruned"]
+file_name_list=[ "Obs_Feature25_pruned",  "Obs_UserFeature106_pruned"]
 
 for fname in file_name_list:
 	# Loading data from no columns csv files; hence header=None set
