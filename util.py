@@ -154,7 +154,7 @@ def evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z):
 
     fig.suptitle('{:.1f}% A matched Z'.format(A_Z_matched * 100.))
     
-    return A_Z_matched, rmse
+    return A_Z_matched, rmse, recovered_rank
 
 
 
@@ -278,7 +278,7 @@ def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
     return corr_treat[0], corr_out[0], X_data_unobs_conf
 
 
-def refutation_analysis(method, case):
+def refutation_analysis(method):
     '''
         method: lr; svm
     '''
@@ -309,7 +309,7 @@ def refutation_analysis(method, case):
     elif method == 'IPTW_SVM':
         Yhat_0, Yhat_1 = fit_IPTW_SVM(X_data, Y_data, A_data, nObs)
         
-    a_matched_z, rmse = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+    a_matched_z, rmse, recovered_rank = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
     print('% of A matched Z', a_matched_z)
 
     A_matched_Z.append(a_matched_z)
@@ -318,10 +318,11 @@ def refutation_analysis(method, case):
     #UnObs Confounder
     A_matched_Z_unobs = []
     RMSEs_unobs = []
+    RMSEs_refute = []
 
     corr_t=[]
     corr_y=[]
-    alpha_range= [10**3, 10**4, 10**5]
+    alpha_range= [10**3, 5*10**3, 10**4, 5*10**4, 10**5]
 
     for alpha in alpha_range:
 
@@ -336,14 +337,17 @@ def refutation_analysis(method, case):
 
         #Results on Confounded Data
         Yhat_0, Yhat_1 = fit_IPTW_LR(X_data_unobs,Y_data,  A_data, nObs)
-        a_matched_z, rmse = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+        a_matched_z, rmse, recovered_rank_unobs = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
 
-        A_matched_Z_unobs.append(a_matched_z)
-        RMSEs_unobs.append(rmse)
+        A_matched_Z_unobs.append(a_matched_z)        
+        RMSEs_unobs.append( rmse )
+        RMSEs_refute.append( np.sqrt(np.mean((recovered_rank_unobs - recovered_rank)**2)) )
 
         print('Final')
         print('Correlation Treatment: ', corr_treat)
         print('Correlation Outcome: ', corr_out)
+        
+        print(recovered_rank_unobs)
 
     alpha_range=np.array(alpha_range)
     alpha_range=10000*(1/alpha_range)
@@ -355,4 +359,4 @@ def refutation_analysis(method, case):
     sort_indice = sort_indice[::-1]
     print(sort_indice, RMSEs_unobs)
     
-    return alpha_range, sort_indice, a_matched_z, A_matched_Z_unobs, RMSEs_unobs, RMSEs, corr_t, corr_y
+    return alpha_range, sort_indice, a_matched_z, A_matched_Z_unobs, RMSEs_refute, RMSEs_unobs, RMSEs, corr_t, corr_y
