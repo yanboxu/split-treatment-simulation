@@ -126,6 +126,7 @@ def evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z):
     print('Est. Y_1 RMSE:', np.sqrt(np.mean(Yhat_1 - Y_1_data) ** 2))
     
     est_ite_sort_order = np.argsort(Yhat_1 - Yhat_0)
+    print('Debug: ', np.mean(np.abs(Yhat_1 - Yhat_0)))
     recovered_rank = np.zeros(len(Z))
     n_start = 0
     for i in range(len(np.unique(Group_data))):
@@ -203,7 +204,7 @@ def fit_IPTW_SVM(X_data, Y_data, A_data, nObs):
     
     # 2. Fit weighted RF
     X_A_data = np.array([X_data[i] * A_data[i] for i in range(nObs)])
-    model = svm.SVR(kernel='linear').fit(np.concatenate((X_data, X_A_data, A_data.reshape(-1,1)),1),Y_data,sample_weight=iptw)
+    model = svm.SVR(kernel='linear', max_iter=50000).fit(np.concatenate((X_data, X_A_data, A_data.reshape(-1,1)),1),Y_data,sample_weight=iptw)
     Yhat_0 = model.predict(np.concatenate((X_data,np.zeros(X_data.shape), np.zeros((nObs,1))),1))
     Yhat_1 = model.predict(np.concatenate((X_data, X_data, np.ones((nObs,1))),1))
 
@@ -336,7 +337,11 @@ def refutation_analysis(method):
         corr_y.append(corr_out)
 
         #Results on Confounded Data
-        Yhat_0, Yhat_1 = fit_IPTW_LR(X_data_unobs,Y_data,  A_data, nObs)
+        if method == 'IPTW_LR':
+            Yhat_0, Yhat_1 = fit_IPTW_LR(X_data_unobs,Y_data,  A_data, nObs)
+        elif method == 'IPTW_SVM':
+            Yhat_0, Yhat_1 = fit_IPTW_SVM(X_data_unobs,Y_data,  A_data, nObs)
+            
         a_matched_z, rmse, recovered_rank_unobs = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
 
         A_matched_Z_unobs.append(a_matched_z)        
