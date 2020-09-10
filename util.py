@@ -154,7 +154,7 @@ def evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z):
 
     fig.suptitle('{:.1f}% A matched Z'.format(A_Z_matched * 100.))
     
-    return A_Z_matched, rmse
+    return A_Z_matched, rmse, recovered_rank
 
 
 
@@ -192,7 +192,7 @@ def fit_IPTW_RF(X_data, Y_data, A_data, nObs):
 
     return Yhat_0, Yhat_1
 
-def fit_IPTW_SVM(X_data, Y_data, A_data, nObs):
+def fit_IPTW_SVM(X_data, Y_data, A_data, nObs, max_iter=0):
     # 1. Fit propensity
     clf = LogisticRegression().fit(X_data, A_data)
     propensity = clf.predict_proba(X_data)[:,1]
@@ -203,7 +203,10 @@ def fit_IPTW_SVM(X_data, Y_data, A_data, nObs):
     
     # 2. Fit weighted RF
     X_A_data = np.array([X_data[i] * A_data[i] for i in range(nObs)])
-    model = svm.SVR(kernel='linear').fit(np.concatenate((X_data, X_A_data, A_data.reshape(-1,1)),1),Y_data,sample_weight=iptw)
+    if max_iter:
+        model = svm.SVR(kernel='linear', max_iter=max_iter).fit(np.concatenate((X_data, X_A_data, A_data.reshape(-1,1)),1),Y_data,sample_weight=iptw)
+    else:
+        model = svm.SVR(kernel='linear').fit(np.concatenate((X_data, X_A_data, A_data.reshape(-1,1)),1),Y_data,sample_weight=iptw)
     Yhat_0 = model.predict(np.concatenate((X_data,np.zeros(X_data.shape), np.zeros((nObs,1))),1))
     Yhat_1 = model.predict(np.concatenate((X_data, X_data, np.ones((nObs,1))),1))
 
@@ -218,6 +221,19 @@ def fit_LR(X_data, Y_data, A_data, nObs):
     Yhat_1 = model.predict(np.concatenate((X_data,X_data, np.ones((nObs,1))),1))
 
     return Yhat_0, Yhat_1
+
+
+def placebo_confounder(X_data, A_data, Y_data):
+
+    treatment= A_data 
+    outcome= Y_data
+    data_size= X_data.shape[0]
+    random_col= np.random.rand(data_size)
+    random_col[random_col<0.5]=0
+    random_col[random_col>=0.5]= 1
+    print( np.unique(random_col, return_counts=True) )
+    A_data_placebo= random_col.astype(int)
+    return A_data_placebo
 
 
 def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
@@ -237,7 +253,6 @@ def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
         # Posterior Vairance
         unobs_confounder_stats[tcase,1]= eps/(sample_size+1)
         print('Alpha: ', alpha, ' Sample_size : ', sample_size, ' Sum_ ', np.mean(sample_outcome), np.sum(sample_outcome), unobs_confounder_stats[tcase,0])
-#     print('Posterior Distirbution: ', unobs_confounder_stats)
 
     # Sample from the unobs confounder posterior
     unobs_confounder= np.zeros((total_size))
@@ -250,16 +265,99 @@ def bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps):
 
     unobs_confounder= mu + sigma*z
 
-    # Compute the correlation of U with T,Y
-#     print( 'U Shape', unobs_confounder.shape )
-#     print( 'U Val', unobs_confounder[ treatment == 0 ][:20],  unobs_confounder[ treatment == 1 ][:20] )
     corr_treat= pearsonr( unobs_confounder, treatment )
     corr_out= pearsonr( unobs_confounder, outcome )
-#     print( 'Correlation Treatment: ', corr_treat )
-#     print( 'Correlation_Outcome:' , corr_out )
 
     # Add the new column to the datatframe
     unobs_confounder= np.reshape( unobs_confounder, (unobs_confounder.shape[0], 1) )
     X_data_unobs_conf= np.concatenate((X_data, unobs_confounder), axis=1)
     
     return corr_treat[0], corr_out[0], X_data_unobs_conf
+
+
+def refutation_analysis(method):
+    '''
+        method: lr; svm
+    '''
+    # Treatment: A_data; Features: X_data; Labels: Y_data [ Each of shape 10k*1 or 10k*50 ]
+    # A and A_data are the same
+
+    xDim = 50
+    nSim = 10000
+
+    #Data Generation
+    A_matched_Z = []
+    RMSEs = []
+
+    # A percentage Z match 52% params
+    # p_AgivenZ= 0.6
+    # p_AgivenNotZ=0.5
+
+    # A percentage Z match 77% params
+    p_AgivenZ= 0.8
+    p_AgivenNotZ=0.2
+
+    X_data, Y_data, A_data, nObs, Group_data, Y_0_data, Y_1_data, Z, A = sim_Data(xDim, nSim, p_AgivenZ, p_AgivenNotZ)
+    print(np.sum(Y_0_data), np.sum(Y_1_data))
+
+    #Results on Normal Data
+    if method == 'IPTW_LR':
+        Yhat_0, Yhat_1 = fit_IPTW_LR(X_data, Y_data, A_data, nObs)
+    elif method == 'IPTW_SVM':
+        Yhat_0, Yhat_1 = fit_IPTW_SVM(X_data, Y_data, A_data, nObs, )
+        
+    a_matched_z, rmse, recovered_rank = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+    print('% of A matched Z', a_matched_z)
+
+    A_matched_Z.append(a_matched_z)
+    RMSEs.append(rmse)
+
+    #UnObs Confounder
+    A_matched_Z_unobs = []
+    RMSEs_unobs = []
+    RMSEs_refute = []
+
+    corr_t=[]
+    corr_y=[]
+    alpha_range= [10**3, 5*10**3, 10**4, 5*10**4, 10**5]
+
+    for alpha in alpha_range:
+
+        #Generate Obs Refutation Data
+        eps= 5000*alpha
+        if alpha ==10**3:
+            eps=5*eps
+
+        corr_treat, corr_out, X_data_unobs= bayes_unobs_confounder(X_data, A_data, Y_data, alpha, eps)
+        corr_t.append(corr_treat)
+        corr_y.append(corr_out)
+
+        #Results on Confounded Data
+        if method == 'IPTW_LR':
+            Yhat_0, Yhat_1 = fit_IPTW_LR(X_data_unobs,Y_data,  A_data, nObs)
+        elif method == 'IPTW_SVM':
+            Yhat_0, Yhat_1 = fit_IPTW_SVM(X_data_unobs,Y_data,  A_data, nObs, max_iter=1000000)
+                
+        a_matched_z, rmse, recovered_rank_unobs = evaluation(Yhat_0, Yhat_1, Group_data, Y_0_data, Y_1_data, A, Z)
+
+        A_matched_Z_unobs.append(a_matched_z)        
+        RMSEs_unobs.append( rmse )
+        RMSEs_refute.append( np.sqrt(np.mean((recovered_rank_unobs - recovered_rank)**2)) )
+
+        print('Final')
+        print('Correlation Treatment: ', corr_treat)
+        print('Correlation Outcome: ', corr_out)
+        
+        print(recovered_rank_unobs)
+
+    alpha_range=np.array(alpha_range)
+    alpha_range=10000*(1/alpha_range)
+
+    A_matched_Z_unobs = np.array(A_matched_Z_unobs)
+    RMSEs_unobs = np.array(RMSEs_unobs)
+
+    sort_indice = np.argsort(A_matched_Z_unobs)
+    sort_indice = sort_indice[::-1]
+    print(sort_indice, RMSEs_unobs)
+    
+    return alpha_range, sort_indice, a_matched_z, A_matched_Z_unobs, RMSEs_refute, RMSEs_unobs, RMSEs, corr_t, corr_y
