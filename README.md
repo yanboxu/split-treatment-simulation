@@ -25,4 +25,3 @@ If you have questions/comments about the code or the paper, please contact [Yanb
   year={2020}
 }
 ```
-```
